@@ -1,0 +1,1383 @@
+// IndexedDB 存储模块
+// 管理所有数据的存储、查询和导出
+
+const DB_NAME = 'LinuxDoReader';
+const DB_VERSION = 5;
+
+let db = null;
+
+// 初始化数据库
+async function init(isRetry = false) {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onerror = () => {
+      console.error('[storage] Failed to open database:', request.error);
+      if (!isRetry) {
+        console.warn('[storage] Attempting to recover by deleting the database.');
+        const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
+        deleteRequest.onsuccess = () => {
+          console.log('[storage] Database deleted. Retrying to open...');
+          init(true).then(resolve).catch(reject);
+        };
+        deleteRequest.onerror = () => {
+          console.error('[storage] Failed to delete database.', deleteRequest.error);
+          reject(deleteRequest.error);
+        };
+      } else {
+        console.error('[storage] Failed to open database even after retry.');
+        reject(request.error);
+      }
+    };
+
+    request.onsuccess = () => {
+      db = request.result;
+      console.log('[storage] Database opened successfully');
+      resolve();
+    };
+
+    request.onupgradeneeded = (event) => {
+      const database = event.target.result;
+      console.log('[storage] Upgrading database to version:', DB_VERSION);
+
+      // 创建 forums ObjectStore
+      if (!database.objectStoreNames.contains('forums')) {
+        const forumsStore = database.createObjectStore('forums', { keyPath: 'forumId' });
+        console.log('[storage] Created forums ObjectStore');
+      }
+
+      // 创建 threads ObjectStore
+      if (!database.objectStoreNames.contains('threads')) {
+        const threadsStore = database.createObjectStore('threads', { keyPath: 'threadId' });
+        threadsStore.createIndex('category', 'category', { unique: false });
+        threadsStore.createIndex('isNew', 'isNew', { unique: false });
+        threadsStore.createIndex('createdAt', 'createdAt', { unique: false });
+        console.log('[storage] Created threads ObjectStore');
+      }
+
+      // 创建 sessions ObjectStore
+      if (!database.objectStoreNames.contains('sessions')) {
+        database.createObjectStore('sessions', { keyPath: 'sessionId' });
+        console.log('[storage] Created sessions ObjectStore');
+      }
+
+      // 创建 read_events ObjectStore
+      if (!database.objectStoreNames.contains('read_events')) {
+        const eventsStore = database.createObjectStore('read_events', { keyPath: 'eventId' });
+        eventsStore.createIndex('threadId', 'threadId', { unique: false });
+        eventsStore.createIndex('sessionId', 'sessionId', { unique: false });
+        eventsStore.createIndex('createdAt', 'createdAt', { unique: false });
+        console.log('[storage] Created read_events ObjectStore');
+      }
+
+      // 创建 disliked_threads ObjectStore
+      if (!database.objectStoreNames.contains('disliked_threads')) {
+        const dislikedStore = database.createObjectStore('disliked_threads', { keyPath: 'threadId' });
+        dislikedStore.createIndex('createdAt', 'createdAt', { unique: false });
+        console.log('[storage] Created disliked_threads ObjectStore');
+      }
+
+      // 初始化论坛数据
+      const transaction = event.target.transaction;
+      const forumsStore = transaction.objectStore('forums');
+      
+      // 初始化 Linux.do 论坛
+      forumsStore.put({
+        forumId: 'linux.do',
+        baseUrl: 'https://linux.do',
+        createdAt: new Date().toISOString()
+      });
+      
+      // 初始化 NodeSeek 论坛
+      forumsStore.put({
+        forumId: 'nodeseek.com',
+        baseUrl: 'https://www.nodeseek.com',
+        createdAt: new Date().toISOString()
+      });
+    };
+  });
+}
+
+// 确保数据库已初始化
+async function ensureDb() {
+  if (!db) {
+    await init();
+  }
+  return db;
+}
+
+// 生成唯一ID
+function generateId() {
+  return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// 保存会话
+async function saveSession(session) {
+  await ensureDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['sessions'], 'readwrite');
+    const store = transaction.objectStore('sessions');
+    const request = store.put(session);
+    
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 保存或更新帖子
+async function upsertThread(thread) {
+  await ensureDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['threads'], 'readwrite');
+    const store = transaction.objectStore('threads');
+    
+    // 先尝试获取现有记录
+    const getRequest = store.get(thread.threadId);
+    getRequest.onsuccess = () => {
+      const existing = getRequest.result;
+      const now = new Date().toISOString();
+      
+      const threadData = {
+        threadId: thread.threadId,
+        forumId: thread.forumId || 'linux.do',
+        url: thread.url,
+        title: thread.title,
+        category: thread.category || '',
+        tags: thread.tags || [],
+        publishedAt: thread.publishedAt || now,
+        createdAt: existing ? existing.createdAt : now,
+        updatedAt: now,
+        lastSeenAt: now,
+        isNew: thread.isNew !== undefined ? thread.isNew : (existing ? existing.isNew : true)
+      };
+      
+      const putRequest = store.put(threadData);
+      putRequest.onsuccess = () => resolve();
+      putRequest.onerror = () => reject(putRequest.error);
+    };
+    getRequest.onerror = () => reject(getRequest.error);
+  });
+}
+
+// 获取用户设置的阈值
+async function getThresholds() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['thresholdSeconds', 'thresholdScroll'], (result) => {
+      resolve({
+        thresholdSeconds: result.thresholdSeconds || 20, // 默认20秒，更合理
+        thresholdScroll: result.thresholdScroll || 50
+      });
+    });
+  });
+}
+
+
+// 更新阅读事件
+async function updateReadEvent(eventData) {
+  await ensureDb();
+  const thresholds = await getThresholds();
+  
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['read_events'], 'readwrite');
+    const store = transaction.objectStore('read_events');
+    
+    const eventId = `${eventData.sessionId}_${eventData.threadId}`;
+    const now = new Date().toISOString();
+    
+    // 先尝试获取现有记录（同一会话）
+    const getRequest = store.get(eventId);
+    getRequest.onsuccess = () => {
+      const existing = getRequest.result;
+      
+      // 如果记录已存在，直接更新
+      if (existing) {
+        console.log(`[storage] Updating existing event for ${eventData.threadId}`);
+        
+        // 更新现有记录 - 正确累积时间
+        const updatedEvent = {
+          ...existing,
+          leaveAt: now,
+          dwellMsEffective: existing.dwellMsEffective + (eventData.activeMsDelta || 0),
+          maxScrollPct: Math.max(existing.maxScrollPct, eventData.maxScrollPct || 0),
+          updatedAt: now
+        };
+        
+        // 检查是否完成阅读（使用用户设置的阈值）
+        const thresholdMs = thresholds.thresholdSeconds * 1000;
+        console.log(`[storage] Checking completion for ${eventData.threadId}:`, {
+          dwellMsEffective: updatedEvent.dwellMsEffective,
+          thresholdMs: thresholdMs,
+          maxScrollPct: updatedEvent.maxScrollPct,
+          thresholdScroll: thresholds.thresholdScroll,
+          timeCheck: updatedEvent.dwellMsEffective >= thresholdMs,
+          scrollCheck: updatedEvent.maxScrollPct >= thresholds.thresholdScroll,
+          willComplete: updatedEvent.dwellMsEffective >= thresholdMs && updatedEvent.maxScrollPct >= thresholds.thresholdScroll
+        });
+        
+        if (updatedEvent.dwellMsEffective >= thresholdMs && updatedEvent.maxScrollPct >= thresholds.thresholdScroll) {
+          updatedEvent.completed = 1;
+          console.log(`[storage] ✅ Marked as completed! dwellMs: ${updatedEvent.dwellMsEffective}ms (>= ${thresholdMs}ms), scroll: ${updatedEvent.maxScrollPct}% (>= ${thresholds.thresholdScroll}%)`);
+        }
+        
+        const putRequest = store.put(updatedEvent);
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+        return;
+      }
+      
+      // 检查是否已有该帖子的其他会话记录
+      const threadIndex = store.index('threadId');
+      const threadRequest = threadIndex.getAll(eventData.threadId);
+      threadRequest.onsuccess = () => {
+        const existingThreadEvents = threadRequest.result;
+        
+        if (existingThreadEvents.length > 0) {
+          // 找到最新的记录进行合并
+          const latestEvent = existingThreadEvents.reduce((latest, current) => {
+            return new Date(current.updatedAt) > new Date(latest.updatedAt) ? current : latest;
+          });
+          
+          console.log(`[storage] Found existing thread event for ${eventData.threadId}, merging with latest`);
+          
+          // 合并到最新记录 - 修复时间累积逻辑
+          const mergedEvent = {
+            ...latestEvent,
+            leaveAt: now,
+            dwellMsEffective: latestEvent.dwellMsEffective + (eventData.activeMsDelta || 0),
+            maxScrollPct: Math.max(latestEvent.maxScrollPct, eventData.maxScrollPct || 0),
+            updatedAt: now
+          };
+          
+          // 检查是否完成阅读
+          const thresholdMs = thresholds.thresholdSeconds * 1000;
+          if (mergedEvent.dwellMsEffective >= thresholdMs && mergedEvent.maxScrollPct >= thresholds.thresholdScroll) {
+            mergedEvent.completed = 1;
+          }
+          
+          // 删除其他重复记录，只保留合并后的记录
+          const deletePromises = existingThreadEvents.map(event => {
+            return new Promise((deleteResolve, deleteReject) => {
+              const deleteRequest = store.delete(event.eventId);
+              deleteRequest.onsuccess = () => deleteResolve();
+              deleteRequest.onerror = () => deleteReject(deleteRequest.error);
+            });
+          });
+          
+          Promise.all(deletePromises).then(() => {
+            const putRequest = store.put(mergedEvent);
+            putRequest.onsuccess = () => resolve();
+            putRequest.onerror = () => reject(putRequest.error);
+          }).catch(reject);
+          
+          return;
+        }
+        
+        // 没有现有记录，创建新记录 - 修复时间累积逻辑
+        const event = {
+          eventId,
+          sessionId: eventData.sessionId,
+          threadId: eventData.threadId,
+          url: eventData.url,
+          enterAt: now,
+          leaveAt: now,
+          dwellMsEffective: eventData.activeMsDelta || 0,
+          maxScrollPct: eventData.maxScrollPct || 0,
+          completed: 0,
+          createdAt: now,
+          updatedAt: now
+        };
+        
+        // 检查是否完成阅读（使用用户设置的阈值）
+        const thresholdMs = thresholds.thresholdSeconds * 1000;
+        console.log('[storage] Checking completion:', {
+          dwellMsEffective: event.dwellMsEffective,
+          thresholdMs,
+          maxScrollPct: event.maxScrollPct,
+          thresholdScroll: thresholds.thresholdScroll,
+          willComplete: event.dwellMsEffective >= thresholdMs && event.maxScrollPct >= thresholds.thresholdScroll
+        });
+        if (event.dwellMsEffective >= thresholdMs && event.maxScrollPct >= thresholds.thresholdScroll) {
+          event.completed = 1;
+          console.log('[storage] Marked as completed!');
+        }
+        
+        const putRequest = store.put(event);
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+      };
+      threadRequest.onerror = () => reject(threadRequest.error);
+    };
+    getRequest.onerror = () => reject(getRequest.error);
+  });
+}
+
+// 最终结算阅读事件
+async function finalizeReadEvent(eventData) {
+  await ensureDb();
+  const thresholds = await getThresholds();
+  
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['read_events'], 'readwrite');
+    const store = transaction.objectStore('read_events');
+    
+    const eventId = `${eventData.sessionId}_${eventData.threadId}`;
+    const now = new Date().toISOString();
+    
+    // 先尝试获取现有记录
+    const getRequest = store.get(eventId);
+    getRequest.onsuccess = () => {
+      const existing = getRequest.result;
+      
+      if (existing) {
+        const event = {
+          ...existing,
+          leaveAt: now,
+          dwellMsEffective: existing.dwellMsEffective + (eventData.activeMsDelta || 0),
+          maxScrollPct: Math.max(existing.maxScrollPct, eventData.maxScrollPct || 0),
+          updatedAt: now
+        };
+        
+        // 最终检查是否完成阅读（使用用户设置的阈值）
+        const thresholdMs = thresholds.thresholdSeconds * 1000;
+        if (event.dwellMsEffective >= thresholdMs && event.maxScrollPct >= thresholds.thresholdScroll) {
+          event.completed = 1;
+        }
+        
+        const putRequest = store.put(event);
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+      } else {
+        // 如果没有现有记录，创建一个新的
+        const event = {
+          eventId,
+          sessionId: eventData.sessionId,
+          threadId: eventData.threadId,
+          url: eventData.url,
+          enterAt: now,
+          leaveAt: now,
+          dwellMsEffective: eventData.activeMsDelta || 0,
+          maxScrollPct: eventData.maxScrollPct || 0,
+          completed: 0,
+          createdAt: now,
+          updatedAt: now
+        };
+        
+        // 检查是否完成阅读（使用用户设置的阈值）
+        const thresholdMs = thresholds.thresholdSeconds * 1000;
+        if (event.dwellMsEffective >= thresholdMs && event.maxScrollPct >= thresholds.thresholdScroll) {
+          event.completed = 1;
+        }
+        
+        const putRequest = store.put(event);
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+      }
+    };
+    getRequest.onerror = () => reject(getRequest.error);
+  });
+}
+
+// 获取所有帖子
+async function getAllThreads() {
+  await ensureDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['threads'], 'readonly');
+    const store = transaction.objectStore('threads');
+    const request = store.getAll();
+    
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 获取新帖子
+async function getNewThreads() {
+  await ensureDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['threads'], 'readonly');
+    const store = transaction.objectStore('threads');
+    const index = store.index('isNew');
+    const request = index.getAll(true); // 只获取 isNew = true 的记录
+    
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 获取所有阅读事件
+async function getAllReadEvents() {
+  await ensureDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['read_events'], 'readonly');
+    const store = transaction.objectStore('read_events');
+    const request = store.getAll();
+    
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 获取所有会话
+async function getAllSessions() {
+  await ensureDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['sessions'], 'readonly');
+    const store = transaction.objectStore('sessions');
+    const request = store.getAll();
+    
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 导出所有数据
+async function exportAllData() {
+  await ensureDb();
+  
+  // 导出前自动去重
+  console.log('[storage] Auto-deduplicating before export...');
+  const dedupeResult = await deduplicateReadEvents();
+  console.log(`[storage] Deduplication result:`, dedupeResult);
+  
+  const [events, sessions, threads] = await Promise.all([
+    getAllReadEvents(),
+    getAllSessions(),
+    getAllThreads()
+  ]);
+  
+  return {
+    events,
+    sessions,
+    threads,
+    exportedAt: new Date().toISOString(),
+    deduplicationInfo: dedupeResult
+  };
+}
+
+// 导出阅读数据
+async function exportReadingData() {
+  await ensureDb();
+  
+  // 导出前自动去重
+  console.log('[storage] Auto-deduplicating before export...');
+  const dedupeResult = await deduplicateReadEvents();
+  console.log(`[storage] Deduplication result:`, dedupeResult);
+  
+  const [events, sessions, dislikedThreads] = await Promise.all([
+    getAllReadEvents(),
+    getAllSessions(),
+    getAllDislikedThreads()
+  ]);
+  
+  return {
+    events,
+    sessions,
+    dislikedThreads,
+    exportedAt: new Date().toISOString(),
+    deduplicationInfo: dedupeResult
+  };
+}
+
+// 导出抓取数据
+async function exportFetchData() {
+  await ensureDb();
+  
+  const threads = await getAllThreads();
+  
+  return {
+    threads,
+    exportedAt: new Date().toISOString()
+  };
+}
+
+// 清空所有数据
+async function clearAllData() {
+  await ensureDb();
+  
+  const objectStoreNames = ['forums', 'threads', 'sessions', 'read_events'];
+  
+  for (const storeName of objectStoreNames) {
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction([storeName], 'readwrite');
+      const store = transaction.objectStore(storeName);
+      const request = store.clear();
+      
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+  
+  // 重新初始化论坛数据
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(['forums'], 'readwrite');
+    const store = transaction.objectStore('forums');
+    
+    // 初始化 Linux.do 论坛
+    const linuxDoRequest = store.put({
+      forumId: 'linux.do',
+      baseUrl: 'https://linux.do',
+      createdAt: new Date().toISOString()
+    });
+    
+    linuxDoRequest.onsuccess = () => {
+      // 初始化 NodeSeek 论坛
+      const nodeSeekRequest = store.put({
+        forumId: 'nodeseek.com',
+        baseUrl: 'https://www.nodeseek.com',
+        createdAt: new Date().toISOString()
+      });
+      
+      nodeSeekRequest.onsuccess = () => resolve();
+      nodeSeekRequest.onerror = () => reject(nodeSeekRequest.error);
+    };
+    
+    linuxDoRequest.onerror = () => reject(linuxDoRequest.error);
+  });
+}
+
+// 清空阅读数据（保留帖子数据）
+async function clearReadingData() {
+  await ensureDb();
+  
+  const objectStoreNames = ['read_events', 'sessions', 'disliked_threads'];
+  
+  for (const storeName of objectStoreNames) {
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction([storeName], 'readwrite');
+      const store = transaction.objectStore(storeName);
+      const request = store.clear();
+      
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+  
+  return { success: true, cleared: objectStoreNames };
+}
+
+// 清空抓取数据（保留阅读数据）
+async function clearFetchData() {
+  await ensureDb();
+  
+  const objectStoreNames = ['threads'];
+  
+  for (const storeName of objectStoreNames) {
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction([storeName], 'readwrite');
+      const store = transaction.objectStore(storeName);
+      const request = store.clear();
+      
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+  
+  return { success: true, cleared: objectStoreNames };
+}
+
+// 添加不感兴趣的帖子
+async function addDislikedThread(threadId) {
+  await ensureDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['disliked_threads'], 'readwrite');
+    const store = transaction.objectStore('disliked_threads');
+    const now = new Date().toISOString();
+    
+    const dislikedThread = {
+      threadId,
+      createdAt: now,
+      updatedAt: now
+    };
+    
+    const request = store.put(dislikedThread);
+    request.onsuccess = () => {
+      console.log(`[storage] Added disliked thread: ${threadId}`);
+      resolve();
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 获取所有不感兴趣的帖子
+async function getAllDislikedThreads() {
+  await ensureDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['disliked_threads'], 'readonly');
+    const store = transaction.objectStore('disliked_threads');
+    const request = store.getAll();
+    
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 移除不感兴趣的帖子
+async function removeDislikedThread(threadId) {
+  await ensureDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['disliked_threads'], 'readwrite');
+    const store = transaction.objectStore('disliked_threads');
+    const request = store.delete(threadId);
+    
+    request.onsuccess = () => {
+      console.log(`[storage] Removed disliked thread: ${threadId}`);
+      resolve();
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 批量添加不感兴趣的帖子
+async function addDislikedThreads(threadIds) {
+  await ensureDb();
+  const now = new Date().toISOString();
+  
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['disliked_threads'], 'readwrite');
+    const store = transaction.objectStore('disliked_threads');
+    
+    let completed = 0;
+    let errors = [];
+    
+    if (threadIds.length === 0) {
+      resolve({ success: true, added: 0, errors: [] });
+      return;
+    }
+    
+    threadIds.forEach(threadId => {
+      const dislikedThread = {
+        threadId,
+        createdAt: now,
+        updatedAt: now
+      };
+      
+      const request = store.put(dislikedThread);
+      request.onsuccess = () => {
+        completed++;
+        if (completed === threadIds.length) {
+          console.log(`[storage] Batch added ${completed} disliked threads`);
+          resolve({ success: true, added: completed, errors });
+        }
+      };
+      request.onerror = () => {
+        errors.push({ threadId, error: request.error.message });
+        completed++;
+        if (completed === threadIds.length) {
+          console.log(`[storage] Batch added ${completed} disliked threads with ${errors.length} errors`);
+          resolve({ success: errors.length === 0, added: completed - errors.length, errors });
+        }
+      };
+    });
+  });
+}
+
+// 导入数据（只导入阅读记录和偏好数据）
+async function importData(importData) {
+  await ensureDb();
+  
+  try {
+    console.log('[storage] Starting data import...');
+    
+    let importedCount = 0;
+    let skippedCount = 0;
+    const errors = [];
+    
+    // 导入阅读事件
+    if (importData.events && Array.isArray(importData.events)) {
+      console.log(`[storage] Importing ${importData.events.length} read events...`);
+      
+      for (const event of importData.events) {
+        try {
+          // 验证事件数据
+          if (!event.eventId || !event.threadId || !event.sessionId) {
+            errors.push(`Invalid event data: missing required fields`);
+            skippedCount++;
+            continue;
+          }
+          
+          // 检查是否已存在
+          const existing = await new Promise((resolve) => {
+            const transaction = db.transaction(['read_events'], 'readonly');
+            const store = transaction.objectStore('read_events');
+            const request = store.get(event.eventId);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => resolve(null);
+          });
+          
+          if (existing) {
+            console.log(`[storage] Event ${event.eventId} already exists, skipping`);
+            skippedCount++;
+            continue;
+          }
+          
+          // 导入事件
+          await new Promise((resolve, reject) => {
+            const transaction = db.transaction(['read_events'], 'readwrite');
+            const store = transaction.objectStore('read_events');
+            const request = store.put(event);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+          });
+          
+          importedCount++;
+        } catch (error) {
+          console.error(`[storage] Error importing event ${event.eventId}:`, error);
+          errors.push(`Event ${event.eventId}: ${error.message}`);
+          skippedCount++;
+        }
+      }
+    }
+    
+    // 导入不感兴趣的帖子
+    if (importData.dislikedThreads && Array.isArray(importData.dislikedThreads)) {
+      console.log(`[storage] Importing ${importData.dislikedThreads.length} disliked threads...`);
+      
+      for (const dislikedThread of importData.dislikedThreads) {
+        try {
+          // 验证数据
+          if (!dislikedThread.threadId) {
+            errors.push(`Invalid disliked thread data: missing threadId`);
+            skippedCount++;
+            continue;
+          }
+          
+          // 检查是否已存在
+          const existing = await new Promise((resolve) => {
+            const transaction = db.transaction(['disliked_threads'], 'readonly');
+            const store = transaction.objectStore('disliked_threads');
+            const request = store.get(dislikedThread.threadId);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => resolve(null);
+          });
+          
+          if (existing) {
+            console.log(`[storage] Disliked thread ${dislikedThread.threadId} already exists, skipping`);
+            skippedCount++;
+            continue;
+          }
+          
+          // 导入不感兴趣的帖子
+          await new Promise((resolve, reject) => {
+            const transaction = db.transaction(['disliked_threads'], 'readwrite');
+            const store = transaction.objectStore('disliked_threads');
+            const request = store.put(dislikedThread);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+          });
+          
+          importedCount++;
+        } catch (error) {
+          console.error(`[storage] Error importing disliked thread ${dislikedThread.threadId}:`, error);
+          errors.push(`Disliked thread ${dislikedThread.threadId}: ${error.message}`);
+          skippedCount++;
+        }
+      }
+    }
+    
+    console.log(`[storage] Import completed: ${importedCount} imported, ${skippedCount} skipped`);
+    
+    return {
+      success: true,
+      importedCount,
+      skippedCount,
+      errors: errors.slice(0, 10) // 只返回前10个错误
+    };
+    
+  } catch (error) {
+    console.error('[storage] Import failed:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+// 获取统计信息
+async function getStats() {
+  await ensureDb();
+  
+  const [events, threads, newThreads, dislikedThreads] = await Promise.all([
+    getAllReadEvents(),
+    getAllThreads(),
+    getNewThreads(),
+    getAllDislikedThreads()
+  ]);
+  
+  const today = new Date().toDateString();
+  const todayEvents = events.filter(e => new Date(e.createdAt).toDateString() === today);
+  const completedToday = todayEvents.filter(e => e.completed === 1).length;
+  
+  return {
+    totalEvents: events.length,
+    totalThreads: threads.length,
+    newThreads: newThreads.length,
+    todayEvents: todayEvents.length,
+    completedToday,
+    dislikedThreads: dislikedThreads.length
+  };
+}
+
+
+// 去重阅读事件（优化版本，避免全表操作）
+async function deduplicateReadEvents() {
+  await ensureDb();
+  
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['read_events'], 'readwrite');
+    const store = transaction.objectStore('read_events');
+    
+    // 使用索引按 threadId 查询，避免全表扫描
+    const threadIndex = store.index('threadId');
+    const request = threadIndex.openCursor();
+    
+    const threadGroups = {};
+    const duplicateCount = { total: 0, threads: 0 };
+    
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      
+      if (!cursor) {
+        // 处理所有分组
+        processThreadGroups(threadGroups, duplicateCount, store, resolve, reject);
+        return;
+      }
+      
+      const eventData = cursor.value;
+      const threadId = eventData.threadId;
+      
+      if (!threadGroups[threadId]) {
+        threadGroups[threadId] = [];
+      }
+      threadGroups[threadId].push(eventData);
+      
+      cursor.continue();
+    };
+    
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 处理线程分组的辅助函数
+function processThreadGroups(threadGroups, duplicateCount, store, resolve, reject) {
+  const mergedEvents = [];
+  
+  Object.entries(threadGroups).forEach(([threadId, threadEvents]) => {
+    if (threadEvents.length > 1) {
+      // 合并重复事件
+      const sortedEvents = threadEvents.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      const merged = {
+        ...sortedEvents[0],
+        eventId: `merged_${threadId}_${Date.now()}`,
+        enterAt: sortedEvents[0].enterAt,
+        leaveAt: sortedEvents[sortedEvents.length - 1].leaveAt,
+        dwellMsEffective: sortedEvents.reduce((sum, e) => sum + (e.dwellMsEffective || 0), 0),
+        maxScrollPct: Math.max(...sortedEvents.map(e => e.maxScrollPct || 0)),
+        completed: sortedEvents.some(e => e.completed === 1) ? 1 : 0,
+        updatedAt: new Date().toISOString()
+      };
+      
+      mergedEvents.push(merged);
+      duplicateCount.total += threadEvents.length - 1;
+      duplicateCount.threads++;
+      
+      console.log(`[storage] Merged ${threadEvents.length} events for thread ${threadId}`);
+    } else {
+      mergedEvents.push(threadEvents[0]);
+    }
+  });
+  
+  // 批量删除和插入，提高性能
+  if (mergedEvents.length === 0) {
+    resolve({ success: true, duplicateCount });
+    return;
+  }
+  
+  // 先删除所有重复的事件
+  const deletePromises = Object.keys(threadGroups).map(threadId => {
+    return new Promise((deleteResolve, deleteReject) => {
+      const deleteRequest = store.delete(threadId);
+      deleteRequest.onsuccess = () => deleteResolve();
+      deleteRequest.onerror = () => deleteReject(deleteRequest.error);
+    });
+  });
+  
+  Promise.all(deletePromises).then(() => {
+    // 批量插入合并后的事件
+    let completed = 0;
+    mergedEvents.forEach(event => {
+      const putRequest = store.put(event);
+      putRequest.onsuccess = () => {
+        completed++;
+        if (completed === mergedEvents.length) {
+          console.log(`[storage] Deduplication complete: removed ${duplicateCount.total} duplicate events from ${duplicateCount.threads} threads`);
+          resolve({ success: true, duplicateCount });
+        }
+      };
+      putRequest.onerror = () => reject(putRequest.error);
+    });
+  }).catch(reject);
+}
+
+
+// 分页查询函数（优化版本）
+async function getEventsPaginated(offset = 0, limit = 100, filters = {}) {
+  await ensureDb();
+  
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['read_events'], 'readonly');
+    const store = transaction.objectStore('read_events');
+    
+    // 根据过滤器选择最优的索引
+    let index, direction = 'prev';
+    
+    if (filters.threadId) {
+      // 如果有threadId过滤，使用threadId索引
+      index = store.index('threadId');
+      direction = 'prev';
+    } else if (filters.sessionId) {
+      // 如果有sessionId过滤，使用sessionId索引
+      index = store.index('sessionId');
+      direction = 'prev';
+    } else {
+      // 默认使用时间索引
+      index = store.index('createdAt');
+      direction = 'prev';
+    }
+    
+    const request = index.openCursor(null, direction);
+    const results = [];
+    let currentOffset = 0;
+    let processedCount = 0;
+    
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      
+      if (!cursor) {
+        // 查询完成
+        resolve({
+          events: results,
+          total: processedCount,
+          hasMore: false,
+          nextOffset: null
+        });
+        return;
+      }
+      
+      const eventData = cursor.value;
+      
+      // 应用过滤器（优化：提前过滤）
+      let shouldInclude = true;
+      
+      // 如果使用了特定索引，先检查索引字段
+      if (filters.threadId && eventData.threadId !== filters.threadId) {
+        shouldInclude = false;
+      } else if (filters.sessionId && eventData.sessionId !== filters.sessionId) {
+        shouldInclude = false;
+      }
+      
+      // 其他过滤器
+      if (shouldInclude) {
+        if (filters.completed !== undefined && eventData.completed !== filters.completed) {
+          shouldInclude = false;
+        }
+        if (filters.startDate && new Date(eventData.createdAt) < new Date(filters.startDate)) {
+          shouldInclude = false;
+        }
+        if (filters.endDate && new Date(eventData.createdAt) > new Date(filters.endDate)) {
+          shouldInclude = false;
+        }
+      }
+      
+      if (shouldInclude) {
+        if (currentOffset >= offset && results.length < limit) {
+          results.push(eventData);
+        }
+        currentOffset++;
+      }
+      
+      processedCount++;
+      
+      // 如果已经获取足够的数据，停止查询
+      if (results.length >= limit) {
+        resolve({
+          events: results,
+          total: processedCount,
+          hasMore: true,
+          nextOffset: offset + limit
+        });
+        return;
+      }
+      
+      cursor.continue();
+    };
+    
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 获取帖子分页查询
+async function getThreadsPaginated(offset = 0, limit = 100, filters = {}) {
+  await ensureDb();
+  
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['threads'], 'readonly');
+    const store = transaction.objectStore('threads');
+    
+    // 根据过滤器选择索引
+    let index, direction = 'prev';
+    
+    if (filters.forumId) {
+      // 如果有论坛过滤，需要全表扫描（可以考虑添加复合索引）
+      index = store;
+    } else if (filters.isNew !== undefined) {
+      index = store.index('isNew');
+    } else if (filters.category) {
+      index = store.index('category');
+    } else {
+      index = store.index('createdAt');
+    }
+    
+    const request = index.openCursor(null, direction);
+    const results = [];
+    let currentOffset = 0;
+    let processedCount = 0;
+    
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      
+      if (!cursor) {
+        resolve({
+          threads: results,
+          total: processedCount,
+          hasMore: false,
+          nextOffset: null
+        });
+        return;
+      }
+      
+      const thread = cursor.value;
+      
+      // 应用过滤器
+      let shouldInclude = true;
+      if (filters.forumId && thread.forumId !== filters.forumId) {
+        shouldInclude = false;
+      }
+      if (filters.isNew !== undefined && thread.isNew !== filters.isNew) {
+        shouldInclude = false;
+      }
+      if (filters.category && thread.category !== filters.category) {
+        shouldInclude = false;
+      }
+      if (filters.startDate && new Date(thread.createdAt) < new Date(filters.startDate)) {
+        shouldInclude = false;
+      }
+      if (filters.endDate && new Date(thread.createdAt) > new Date(filters.endDate)) {
+        shouldInclude = false;
+      }
+      
+      if (shouldInclude) {
+        if (currentOffset >= offset && results.length < limit) {
+          results.push(thread);
+        }
+        currentOffset++;
+      }
+      
+      processedCount++;
+      
+      if (results.length >= limit) {
+        resolve({
+          threads: results,
+          total: processedCount,
+          hasMore: true,
+          nextOffset: offset + limit
+        });
+        return;
+      }
+      
+      cursor.continue();
+    };
+    
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 获取最近阅读事件（优化版本）
+async function getRecentEventsPaginated(limit = 50, forum = 'all') {
+  const filters = {};
+  if (forum !== 'all') {
+    // 需要先获取该论坛的帖子ID列表
+    const forumThreads = await getThreadsPaginated(0, 10000, { forumId: forum });
+    const threadIds = new Set(forumThreads.threads.map(t => t.threadId));
+    
+    // 由于IndexedDB限制，这里使用内存过滤
+    // 在实际应用中，应该使用复合索引
+    const allEvents = await getEventsPaginated(0, 1000);
+    const filteredEvents = allEvents.events.filter(event => threadIds.has(event.threadId));
+    
+    return {
+      events: filteredEvents.slice(0, limit),
+      total: filteredEvents.length,
+      hasMore: filteredEvents.length > limit,
+      nextOffset: limit
+    };
+  }
+  
+  return await getEventsPaginated(0, limit, filters);
+}
+
+// 获取统计信息（优化版本，避免全表扫描）
+async function getStatsOptimized() {
+  await ensureDb();
+  
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['read_events', 'threads', 'disliked_threads'], 'readonly');
+    
+    let completedCount = 0;
+    const results = {
+      totalEvents: 0,
+      totalThreads: 0,
+      newThreads: 0,
+      todayEvents: 0,
+      completedToday: 0,
+      dislikedThreads: 0
+    };
+    
+    // 统计阅读事件
+    const eventsStore = transaction.objectStore('read_events');
+    const eventsRequest = eventsStore.count();
+    eventsRequest.onsuccess = () => {
+      results.totalEvents = eventsRequest.result;
+      completedCount++;
+      if (completedCount === 3) resolve(results);
+    };
+    eventsRequest.onerror = () => reject(eventsRequest.error);
+    
+    // 统计帖子
+    const threadsStore = transaction.objectStore('threads');
+    const threadsRequest = threadsStore.count();
+    threadsRequest.onsuccess = () => {
+      results.totalThreads = threadsRequest.result;
+      completedCount++;
+      if (completedCount === 3) resolve(results);
+    };
+    threadsRequest.onerror = () => reject(threadsRequest.error);
+    
+    // 统计不感兴趣的帖子
+    const dislikedStore = transaction.objectStore('disliked_threads');
+    const dislikedRequest = dislikedStore.count();
+    dislikedRequest.onsuccess = () => {
+      results.dislikedThreads = dislikedRequest.result;
+      completedCount++;
+      if (completedCount === 3) resolve(results);
+    };
+    dislikedRequest.onerror = () => reject(dislikedRequest.error);
+  });
+}
+
+// 性能监控工具
+const performanceMonitor = {
+  startTime: null,
+  operations: [],
+  
+  start(operationName) {
+    this.startTime = performance.now();
+    this.operations.push({
+      name: operationName,
+      startTime: this.startTime
+    });
+  },
+  
+  end(operationName) {
+    const endTime = performance.now();
+    const operation = this.operations.find(op => op.name === operationName);
+    if (operation) {
+      operation.duration = endTime - operation.startTime;
+      console.log(`[performance] ${operationName}: ${operation.duration.toFixed(2)}ms`);
+    }
+  },
+  
+  getStats() {
+    return this.operations.map(op => ({
+      name: op.name,
+      duration: op.duration || 0
+    }));
+  },
+  
+  clear() {
+    this.operations = [];
+  }
+};
+
+// 内存使用监控
+function getMemoryUsage() {
+  if (performance.memory) {
+    return {
+      used: Math.round(performance.memory.usedJSHeapSize / 1024 / 1024),
+      total: Math.round(performance.memory.totalJSHeapSize / 1024 / 1024),
+      limit: Math.round(performance.memory.jsHeapSizeLimit / 1024 / 1024)
+    };
+  }
+  return null;
+}
+
+// 数据验证和清理工具
+const dataValidator = {
+  // 验证线程数据
+  validateThread(thread) {
+    if (!thread || typeof thread !== 'object') return false;
+    
+    const requiredFields = ['threadId', 'url', 'title'];
+    for (const field of requiredFields) {
+      if (!thread[field] || typeof thread[field] !== 'string') {
+        return false;
+      }
+    }
+    
+    // 验证URL格式
+    try {
+      new URL(thread.url);
+    } catch {
+      return false;
+    }
+    
+    // 验证threadId格式
+    if (!/^[a-z]+:\d+$/.test(thread.threadId)) {
+      return false;
+    }
+    
+    return true;
+  },
+  
+  // 验证阅读事件数据
+  validateReadEvent(event) {
+    if (!event || typeof event !== 'object') return false;
+    
+    const requiredFields = ['eventId', 'threadId', 'sessionId'];
+    for (const field of requiredFields) {
+      if (!event[field] || typeof event[field] !== 'string') {
+        return false;
+      }
+    }
+    
+    // 验证数值字段
+    const numericFields = ['dwellMsEffective', 'maxScrollPct', 'completed'];
+    for (const field of numericFields) {
+      if (event[field] !== undefined && (typeof event[field] !== 'number' || isNaN(event[field]))) {
+        return false;
+      }
+    }
+    
+    return true;
+  },
+  
+  // 清理敏感数据
+  sanitizeData(data) {
+    if (!data || typeof data !== 'object') return data;
+    
+    const sanitized = { ...data };
+    
+    // 移除可能的敏感字段
+    const sensitiveFields = ['password', 'token', 'key', 'secret', 'auth'];
+    sensitiveFields.forEach(field => {
+      if (sanitized[field]) {
+        delete sanitized[field];
+      }
+    });
+    
+    // 限制字符串长度
+    const stringFields = ['title', 'category', 'url'];
+    stringFields.forEach(field => {
+      if (sanitized[field] && typeof sanitized[field] === 'string') {
+        sanitized[field] = sanitized[field].substring(0, 1000); // 限制1000字符
+      }
+    });
+    
+    return sanitized;
+  },
+  
+  // 验证导入数据
+  validateImportData(data) {
+    if (!data || typeof data !== 'object') return false;
+    
+    // 检查数据结构
+    const validKeys = ['events', 'threads', 'sessions', 'dislikedThreads'];
+    const hasValidKeys = validKeys.some(key => data[key] && Array.isArray(data[key]));
+    
+    if (!hasValidKeys) return false;
+    
+    // 验证数据量限制（防止恶意导入）
+    const maxRecords = 10000;
+    for (const key of validKeys) {
+      if (data[key] && data[key].length > maxRecords) {
+        console.warn(`[security] Import data too large: ${key} has ${data[key].length} records`);
+        return false;
+      }
+    }
+    
+    return true;
+  }
+};
+
+// 安全日志记录
+const securityLogger = {
+  log(level, message, data = null) {
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+      timestamp,
+      level,
+      message,
+      data: data ? this.sanitizeLogData(data) : null
+    };
+    
+    console.log(`[security:${level}] ${message}`, logEntry);
+  },
+  
+  sanitizeLogData(data) {
+    if (!data || typeof data !== 'object') return data;
+    
+    const sanitized = { ...data };
+    
+    // 移除敏感信息
+    const sensitiveFields = ['password', 'token', 'key', 'secret', 'auth', 'cookie'];
+    sensitiveFields.forEach(field => {
+      if (sanitized[field]) {
+        sanitized[field] = '[REDACTED]';
+      }
+    });
+    
+    return sanitized;
+  }
+};
+
+export default {
+  init,
+  saveSession,
+  upsertThread,
+  updateReadEvent,
+  finalizeReadEvent,
+  getAllThreads,
+  getNewThreads,
+  getAllReadEvents,
+  getAllSessions,
+  addDislikedThread,
+  addDislikedThreads,
+  getAllDislikedThreads,
+  removeDislikedThread,
+  importData,
+  exportAllData,
+  exportReadingData,
+  exportFetchData,
+  clearAllData,
+  clearReadingData,
+  clearFetchData,
+  getStats,
+  deduplicateReadEvents,
+  getEventsPaginated,
+  getThreadsPaginated,
+  getRecentEventsPaginated,
+  getStatsOptimized,
+  performanceMonitor,
+  getMemoryUsage,
+  dataValidator,
+  securityLogger
+};

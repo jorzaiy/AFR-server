@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>论坛助手 - 智能推荐</title>
+    <link rel="stylesheet" href="enhanced-styles.css" />
+</head>
+<body>
+    <div class="container">
+        <!-- 头部区域 -->
+        <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h1>📚 智能推荐</h1>
+            <button id="theme-toggle" class="btn btn-sm" title="切换主题">☀️</button>
+        </header>
+        
+        <!-- 统计信息 -->
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-number" id="today-reads">-</div>
+                <div class="stat-label">今日阅读</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="total-threads">-</div>
+                <div class="stat-label">本地帖子</div>
+            </div>
+        </div>
+        
+        <!-- 状态消息 -->
+        <div id="status-message" class="status-message"></div>
+        
+        <!-- 控制面板 -->
+        <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+            <select id="forum-selector" class="btn btn-secondary" style="flex: 1; min-width: 120px;">
+                <option value="all">全部论坛</option>
+                <option value="linux.do">Linux.do</option>
+                <option value="nodeseek.com">NodeSeek</option>
+                <option value="v2ex.com">V2EX</option>
+            </select>
+            <button id="btn-refresh" class="btn btn-primary">
+                🔄 刷新推荐
+            </button>
+            <button id="btn-fetch" class="btn btn-success">
+                📥 抓取
+            </button>
+        </div>
+        
+        <!-- 推荐内容 -->
+        <div id="recommendations-container">
+            <div id="loading" class="loading" style="display: none;">
+                正在加载推荐...
+            </div>
+            
+            <div id="empty-state" class="empty-state" style="display: none;">
+                <div class="empty-state-icon">📭</div>
+                <div class="empty-state-text">暂无推荐内容</div>
+                <button class="btn btn-primary btn-sm" onclick="loadRecommendations()">
+                    重新加载
+                </button>
+            </div>
+            
+            <ul id="recommendation-list" class="recommendation-list"></ul>
+        </div>
+        
+        <!-- 底部信息 -->
+        <footer style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color); text-align: center;">
+            <div style="font-size: 11px; color: var(--text-muted);">
+                <span id="last-update">最后更新: -</span>
+                <span style="margin: 0 8px;">•</span>
+                <a href="#" id="open-settings" style="color: var(--accent-color); text-decoration: none;">
+                    设置
+                </a>
+            </div>
+        </footer>
+    </div>
+    
+    <!-- 脚本文件 -->
+    <script src="theme-manager.js"></script>
+    <script src="enhanced-popup.js"></script>
+</body>
+</html>
+

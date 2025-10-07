@@ -1,0 +1,52 @@
+{
+  "name": "forum-analyzer-server",
+  "version": "1.0.0",
+  "description": "论坛数据分析与推荐服务器",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "test": "jest",
+    "migrate": "node src/database/migrate.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "compression": "^1.7.4",
+    "morgan": "^1.10.0",
+    "dotenv": "^16.3.1",
+    "mongoose": "^8.0.3",
+    "redis": "^4.6.10",
+    "node-cron": "^3.0.3",
+    "axios": "^1.6.2",
+    "cheerio": "^1.0.0-rc.12",
+    "natural": "^6.7.0",
+    "compromise": "^14.10.0",
+    "ml-matrix": "^6.10.4",
+    "ml-kmeans": "^6.0.0",
+    "ml-distance": "^4.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
+    "express-rate-limit": "^7.1.5",
+    "express-validator": "^7.0.1",
+    "winston": "^3.11.0",
+    "joi": "^17.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3"
+  },
+  "keywords": [
+    "forum",
+    "analysis",
+    "recommendation",
+    "machine-learning",
+    "nlp"
+  ],
+  "author": "Forum Analyzer Team",
+  "license": "MIT"
+}
+
+

@@ -1,0 +1,1180 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>阅读记录与推荐 - 设置</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="theme-manager.js"></script>
+    <style>
+      /* 主题系统覆盖样式 */
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        margin: 0;
+        padding: 10px;
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+        transition: background-color 0.3s ease, color 0.3s ease;
+        min-height: 100vh;
+      }
+      .container {
+        max-width: 600px;
+        width: 100%;
+        margin: 0 auto;
+        background: var(--bg-primary);
+        border-radius: 12px;
+        box-shadow: var(--shadow-lg);
+        border: 1px solid var(--border-color);
+        min-height: 100vh;
+      }
+      .header {
+        background: var(--accent-color);
+        color: white;
+        padding: 20px;
+        text-align: center;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 600;
+      }
+      .content {
+        padding: 30px;
+      }
+      .section {
+        margin-bottom: 30px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--border-color);
+      }
+      .section:last-child {
+        border-bottom: none;
+      }
+      .section h2 {
+        margin: 0 0 15px 0;
+        color: var(--text-primary);
+        font-size: 18px;
+        font-weight: 600;
+      }
+      .form-group {
+        margin-bottom: 15px;
+      }
+      .form-row {
+        display: flex;
+        gap: 20px;
+        align-items: end;
+        flex-wrap: wrap;
+      }
+      .form-row .form-group {
+        flex: 1;
+        min-width: 150px;
+        margin-bottom: 0;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: 500;
+        color: var(--text-secondary);
+      }
+      input[type="number"] {
+        width: 100px;
+        padding: 8px 12px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 14px;
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+        transition: border-color 0.2s ease;
+      }
+      input[type="number"]:focus {
+        outline: none;
+        border-color: var(--accent-color);
+        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+      }
+      input[type="file"] {
+        margin-top: 5px;
+      }
+      button {
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        margin-right: 8px;
+        margin-bottom: 8px;
+        transition: all 0.2s ease;
+      }
+      button:hover:not(:disabled) {
+        background: var(--accent-hover);
+        transform: translateY(-1px);
+        box-shadow: var(--shadow);
+      }
+      button:disabled {
+        background: var(--text-muted);
+        cursor: not-allowed;
+        transform: none;
+      }
+      button.danger {
+        background: var(--danger-color);
+      }
+      button.danger:hover:not(:disabled) {
+        background: #c82333;
+      }
+      button.success {
+        background: var(--success-color);
+      }
+      button.success:hover:not(:disabled) {
+        background: #218838;
+      }
+      .status {
+        margin-top: 10px;
+        padding: 10px;
+        border-radius: 6px;
+        display: none;
+        font-size: 14px;
+      }
+      .status.success {
+        background: rgba(40, 167, 69, 0.1);
+        color: var(--success-color);
+        border: 1px solid rgba(40, 167, 69, 0.2);
+      }
+      .status.error {
+        background: rgba(220, 53, 69, 0.1);
+        color: var(--danger-color);
+        border: 1px solid rgba(220, 53, 69, 0.2);
+      }
+      .status.info {
+        background: rgba(23, 162, 184, 0.1);
+        color: var(--info-color);
+        border: 1px solid rgba(23, 162, 184, 0.2);
+      }
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+        margin-bottom: 20px;
+      }
+      .stat-card {
+        background: var(--bg-secondary);
+        padding: 15px;
+        border-radius: 8px;
+        text-align: center;
+        border: 1px solid var(--border-color);
+        transition: all 0.2s ease;
+      }
+      .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow);
+      }
+      .stat-number {
+        font-size: 24px;
+        font-weight: bold;
+        color: var(--accent-color);
+        margin-bottom: 5px;
+      }
+      .stat-label {
+        font-size: 14px;
+        color: var(--text-secondary);
+      }
+      .help-text {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-top: 5px;
+        line-height: 1.4;
+      }
+      .warning {
+        background: rgba(255, 193, 7, 0.1);
+        color: var(--warning-color);
+        border: 1px solid rgba(255, 193, 7, 0.2);
+        padding: 12px;
+        border-radius: 6px;
+        margin-bottom: 15px;
+        font-size: 14px;
+      }
+      .button-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 12px 0;
+      }
+      .about-content {
+        color: var(--text-primary);
+        line-height: 1.6;
+      }
+      .about-content ul {
+        margin: 10px 0;
+        padding-left: 20px;
+      }
+      .about-content li {
+        margin-bottom: 5px;
+      }
+      .version-badge {
+        background: var(--success-color);
+        color: white;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 500;
+        margin-left: 8px;
+      }
+      
+      /* 主题切换按钮 */
+      #theme-toggle {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: none;
+        border: none;
+        font-size: 18px;
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 6px;
+        transition: background-color 0.2s ease;
+        color: white;
+      }
+      #theme-toggle:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+      }
+      
+      /* 阅读偏好分析样式 */
+      .preference-analysis {
+        margin-top: 20px;
+      }
+      
+      .preference-overview {
+        margin-bottom: 30px;
+      }
+      
+      /* 词云样式 */
+      .word-cloud {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 20px;
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        min-height: 200px;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .word-cloud-item {
+        display: inline-block;
+        padding: 8px 16px;
+        margin: 4px;
+        background: var(--accent-color);
+        color: white;
+        border-radius: 20px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        border: 2px solid transparent;
+        position: relative;
+      }
+
+      .word-cloud-item:hover {
+        background: var(--text-primary);
+        transform: scale(1.05);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      }
+
+      .word-cloud-item.category {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      }
+
+      .word-cloud-item.tag {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      }
+
+      .word-cloud-item.size-1 { font-size: 12px; padding: 6px 12px; }
+      .word-cloud-item.size-2 { font-size: 14px; padding: 8px 16px; }
+      .word-cloud-item.size-3 { font-size: 16px; padding: 10px 20px; }
+      .word-cloud-item.size-4 { font-size: 18px; padding: 12px 24px; }
+      .word-cloud-item.size-5 { font-size: 20px; padding: 14px 28px; }
+
+      .word-cloud-empty {
+        text-align: center;
+        color: var(--text-secondary);
+        font-style: italic;
+        padding: 40px 20px;
+      }
+
+      /* 偏好项样式 */
+      .preference-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        margin: 8px 0;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        transition: all 0.2s ease;
+      }
+      
+      .preference-item:hover {
+        background: var(--bg-hover);
+        border-color: var(--accent-color);
+      }
+      
+      .item-title {
+        font-weight: 500;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+      }
+      
+      .item-meta {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+      
+      .item-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      
+      .item-count {
+        background: var(--accent-color);
+        color: white;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 500;
+        min-width: 24px;
+        text-align: center;
+      }
+      
+      .btn-remove-preference {
+        background: #dc3545;
+        color: white;
+        border: none;
+        padding: 6px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: all 0.2s ease;
+        opacity: 0.7;
+      }
+      
+      .btn-remove-preference:hover {
+        background: #c82333;
+        opacity: 1;
+        transform: scale(1.05);
+      }
+      
+      .empty-state {
+        text-align: center;
+        color: var(--text-secondary);
+        padding: 40px 20px;
+        font-style: italic;
+      }
+      
+      .preference-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-bottom: 20px;
+      }
+      
+      .preference-stat {
+        background: var(--bg-secondary);
+        padding: 15px;
+        border-radius: 8px;
+        text-align: center;
+        border: 1px solid var(--border-color);
+        transition: all 0.2s ease;
+      }
+      
+      .preference-stat:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow);
+      }
+      
+      .preference-stat .stat-label {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-bottom: 5px;
+      }
+      
+      .preference-stat .stat-value {
+        font-size: 18px;
+        font-weight: bold;
+        color: var(--accent-color);
+      }
+      
+      .preference-section {
+        margin-bottom: 30px;
+        padding: 20px;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+      }
+      
+      .preference-section h3 {
+        margin-top: 0;
+        margin-bottom: 15px;
+        color: var(--text-primary);
+        font-size: 16px;
+      }
+      
+      .chart-placeholder {
+        text-align: center;
+        color: var(--text-secondary);
+        font-style: italic;
+        padding: 40px 20px;
+        background: var(--bg-primary);
+        border-radius: 6px;
+        border: 2px dashed var(--border-color);
+      }
+      
+      .category-chart, .time-chart, .tag-cloud, .depth-analysis {
+        min-height: 200px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      
+      /* 版块偏好图表 */
+      .category-bar {
+        display: flex;
+        align-items: center;
+        margin-bottom: 10px;
+        padding: 8px 12px;
+        background: var(--bg-primary);
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+      }
+      
+      .category-name {
+        flex: 1;
+        font-weight: 500;
+        color: var(--text-primary);
+      }
+      
+      .category-count {
+        color: var(--accent-color);
+        font-weight: bold;
+        margin-left: 10px;
+      }
+      
+      .category-bar-fill {
+        height: 6px;
+        background: linear-gradient(90deg, var(--accent-color), var(--accent-hover));
+        border-radius: 3px;
+        margin-top: 5px;
+        transition: width 0.3s ease;
+      }
+      
+      /* 时间偏好图表 */
+      .time-slot {
+        display: inline-block;
+        margin: 2px;
+        padding: 4px 8px;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        font-size: 12px;
+        text-align: center;
+        transition: all 0.2s ease;
+      }
+      
+      .time-slot:hover {
+        background: var(--accent-color);
+        color: white;
+        transform: scale(1.05);
+      }
+      
+      /* 标签云 */
+      .tag-item {
+        display: inline-block;
+        margin: 4px;
+        padding: 6px 12px;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        font-size: 12px;
+        transition: all 0.2s ease;
+        cursor: pointer;
+      }
+      
+      .tag-item:hover {
+        background: var(--accent-color);
+        color: white;
+        transform: scale(1.1);
+      }
+      
+      /* 阅读深度分析 */
+      .depth-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 10px;
+        padding: 10px;
+        background: var(--bg-primary);
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+      }
+      
+      .depth-label {
+        flex: 1;
+        font-weight: 500;
+        color: var(--text-primary);
+      }
+      
+      .depth-percentage {
+        color: var(--accent-color);
+        font-weight: bold;
+        margin-left: 10px;
+      }
+      
+      .depth-bar {
+        height: 8px;
+        background: var(--bg-secondary);
+        border-radius: 4px;
+        margin-top: 5px;
+        overflow: hidden;
+      }
+      
+      .depth-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, var(--success-color), var(--accent-color));
+        border-radius: 4px;
+        transition: width 0.3s ease;
+      }
+      
+      /* 偏好内容和不感兴趣内容样式 */
+      .preference-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 10px;
+        padding: 12px;
+        background: var(--bg-primary);
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        transition: all 0.2s ease;
+      }
+      
+      .preference-item:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow);
+      }
+      
+      .preference-item .item-title {
+        flex: 1;
+        font-weight: 500;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+      }
+      
+      .preference-item .item-meta {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-bottom: 4px;
+      }
+      
+      .preference-item .item-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 8px;
+      }
+      
+      .preference-item .tag {
+        background: var(--accent-color);
+        color: white;
+        padding: 2px 6px;
+        border-radius: 12px;
+        font-size: 10px;
+        font-weight: 500;
+      }
+      
+      .preference-item .item-count {
+        background: var(--success-color);
+        color: white;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: bold;
+        margin-left: 10px;
+      }
+      
+      .preference-item.disliked .item-count {
+        background: var(--danger-color);
+      }
+      
+      .empty-state {
+        text-align: center;
+        color: var(--text-secondary);
+        font-style: italic;
+        padding: 40px 20px;
+        background: var(--bg-primary);
+        border-radius: 8px;
+        border: 2px dashed var(--border-color);
+      }
+      
+      /* 不感兴趣内容管理样式 */
+      .disliked-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+        padding: 12px;
+        background: var(--bg-primary);
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        transition: all 0.2s ease;
+      }
+      
+      .disliked-item:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow);
+      }
+      
+      .disliked-item .item-info {
+        flex: 1;
+      }
+      
+      .disliked-item .item-title {
+        font-weight: 500;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+      }
+      
+      .disliked-item .item-meta {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-bottom: 4px;
+      }
+      
+      .disliked-item .item-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 8px;
+      }
+      
+      .disliked-item .tag {
+        background: var(--accent-color);
+        color: white;
+        padding: 2px 6px;
+        border-radius: 12px;
+        font-size: 10px;
+        font-weight: 500;
+      }
+      
+      .disliked-item .item-actions {
+        display: flex;
+        gap: 8px;
+        margin-left: 10px;
+      }
+      
+      .disliked-item .btn-remove {
+        background: var(--danger-color);
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      
+      .disliked-item .btn-remove:hover {
+        background: #c82333;
+        transform: scale(1.05);
+      }
+      
+      .disliked-item .btn-remove:disabled {
+        background: var(--text-muted);
+        cursor: not-allowed;
+        transform: none;
+      }
+      
+      .disliked-stats {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        padding: 10px;
+        background: var(--bg-primary);
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+      }
+      
+      .disliked-stats .stats-info {
+        font-weight: 500;
+        color: var(--text-primary);
+      }
+      
+      .disliked-stats .btn-clear-all {
+        background: var(--danger-color);
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      
+      .disliked-stats .btn-clear-all:hover {
+        background: #c82333;
+        transform: scale(1.05);
+      }
+      
+      /* 不感兴趣标签管理样式 */
+      .tag-management {
+        margin-bottom: 20px;
+      }
+      
+      .tag-input-section {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: var(--bg-primary);
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+      }
+      
+      .tag-input-section h4 {
+        margin-top: 0;
+        margin-bottom: 10px;
+        color: var(--text-primary);
+        font-size: 14px;
+      }
+      
+      .tag-input-container {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      
+      .tag-input {
+        flex: 1;
+        min-width: 200px;
+        padding: 8px 12px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 14px;
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+        transition: border-color 0.2s ease;
+      }
+      
+      .tag-input:focus {
+        outline: none;
+        border-color: var(--accent-color);
+        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+      }
+      
+      .tag-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 15px;
+      }
+      
+      .tag-item {
+        display: flex;
+        align-items: center;
+        background: var(--accent-color);
+        color: white;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+      }
+      
+      .tag-item:hover {
+        background: var(--accent-hover);
+        transform: scale(1.05);
+      }
+      
+      .tag-item .tag-name {
+        margin-right: 6px;
+      }
+      
+      .tag-item .tag-remove {
+        background: none;
+        border: none;
+        color: white;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        padding: 0;
+        margin-left: 4px;
+        width: 16px;
+        height: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: background-color 0.2s ease;
+      }
+      
+      .tag-item .tag-remove:hover {
+        background-color: rgba(255, 255, 255, 0.2);
+      }
+      
+      .tag-stats {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        padding: 10px;
+        background: var(--bg-primary);
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+      }
+      
+      .tag-stats .stats-info {
+        font-weight: 500;
+        color: var(--text-primary);
+      }
+      
+      .tag-stats .btn-clear-tags {
+        background: var(--danger-color);
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      
+      .tag-stats .btn-clear-tags:hover {
+        background: #c82333;
+        transform: scale(1.05);
+      }
+      
+      .tag-help {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-top: 10px;
+        line-height: 1.4;
+      }
+
+      /* 标签页样式 */
+      .tab-navigation {
+        display: flex;
+        border-bottom: 2px solid var(--border-color);
+        margin-bottom: 20px;
+        background: var(--bg-primary);
+        border-radius: 8px 8px 0 0;
+        overflow-x: auto;
+      }
+
+      .tab-btn {
+        flex: 1;
+        padding: 8px 12px;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all 0.3s ease;
+        border-bottom: 3px solid transparent;
+        font-size: 13px;
+        font-weight: 500;
+        white-space: nowrap;
+        min-width: 80px;
+      }
+
+      .tab-btn:hover {
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+      }
+
+      .tab-btn.active {
+        color: var(--accent-color);
+        border-bottom-color: var(--accent-color);
+        background: var(--bg-secondary);
+      }
+
+      .tab-content {
+        display: none;
+      }
+
+      .tab-content.active {
+        display: block;
+      }
+
+      @media (max-width: 600px) {
+        .tab-navigation {
+          flex-direction: column;
+        }
+        
+        .tab-btn {
+          border-bottom: 1px solid var(--border-color);
+          border-radius: 0;
+        }
+        
+        .tab-btn.active {
+          border-bottom-color: var(--accent-color);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <button id="theme-toggle" title="切换主题">☀️</button>
+        <h1>阅读记录与推荐</h1>
+        <p>设置和管理你的阅读数据</p>
+      </div>
+      
+      <div class="content">
+        <!-- 标签页导航 -->
+        <div class="tab-navigation">
+          <button class="tab-btn active" data-tab="overview">📊 概览</button>
+          <button class="tab-btn" data-tab="settings">⚙️ 设置</button>
+          <button class="tab-btn" data-tab="data">💾 数据</button>
+          <button class="tab-btn" data-tab="about">ℹ️ 关于</button>
+        </div>
+
+        <!-- 概览标签页 -->
+        <div class="tab-content active" id="overview">
+          <!-- 统计信息 -->
+          <div class="section">
+            <h2>📊 阅读统计</h2>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-number" id="total-events">-</div>
+              <div class="stat-label">总阅读事件</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" id="total-threads">-</div>
+              <div class="stat-label">本地帖子数</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" id="new-threads">-</div>
+              <div class="stat-label">新帖子数</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" id="completed-today">-</div>
+              <div class="stat-label">今日完成阅读</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" id="fetch-count">-</div>
+              <div class="stat-label">抓取次数</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" id="last-fetch">-</div>
+              <div class="stat-label">上次抓取</div>
+            </div>
+          </div>
+          <button id="btn-refresh-stats">刷新统计</button>
+        </div>
+
+        <!-- 阅读偏好分析 -->
+        <div class="section">
+          <h2>📈 阅读偏好分析</h2>
+          <div class="preference-analysis">
+            <!-- 偏好内容词云展示 -->
+            <div class="preference-section">
+              <h3>📊 偏好内容词云</h3>
+              <div id="preferred-content">
+                <div class="chart-placeholder">正在分析偏好...</div>
+              </div>
+            </div>
+
+            <!-- 不感兴趣标签管理 -->
+            <div class="preference-section">
+              <h3>🏷️ 不感兴趣标签管理</h3>
+              <div id="disliked-tags-management">
+                <div class="chart-placeholder">正在加载标签设置...</div>
+              </div>
+            </div>
+
+            <button id="btn-refresh-analysis" class="success">🔄 刷新分析</button>
+          </div>
+        </div>
+        </div>
+
+        <!-- 设置标签页 -->
+        <div class="tab-content" id="settings">
+        <!-- 阅读阈值设置 -->
+        <div class="section">
+          <h2>⚙️ 阅读阈值设置</h2>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="threshold-seconds">有效阅读时长（秒）</label>
+              <input type="number" id="threshold-seconds" min="5" max="300" value="2" />
+              <div class="help-text">页面停留时间超过此值才计入有效阅读</div>
+            </div>
+            <div class="form-group">
+              <label for="threshold-scroll">滚动深度阈值（%）</label>
+              <input type="number" id="threshold-scroll" min="10" max="100" value="50" />
+              <div class="help-text">滚动深度超过此值才标记为完成阅读</div>
+            </div>
+          </div>
+          <button id="btn-save">保存设置</button>
+          <div id="saved" class="status success" style="display: none;">设置已保存</div>
+        </div>
+
+        <!-- 推荐系统设置 -->
+        <div class="section">
+          <h2>🎯 推荐系统设置</h2>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="recommendation-count">每次推荐条数</label>
+              <input type="number" id="recommendation-count" min="5" max="50" value="10" />
+              <div class="help-text">每次显示的推荐内容数量（5-50条）</div>
+            </div>
+            <div class="form-group">
+              <label for="auto-fetch-interval">自动抓取间隔（分钟）</label>
+              <input type="number" id="auto-fetch-interval" min="10" max="240" value="30" />
+              <div class="help-text">自动抓取新内容的间隔时间（10-240分钟）</div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="recommendation-algorithm">推荐算法</label>
+              <select id="recommendation-algorithm">
+                <option value="mixed">混合推荐（内容+行为+热度）</option>
+                <option value="content">内容相似度</option>
+                <option value="behavior">行为相似度</option>
+                <option value="popular">热门推荐</option>
+              </select>
+              <div class="help-text">选择推荐算法类型</div>
+            </div>
+            <div class="form-group">
+              <label for="enable-auto-refresh">自动刷新推荐</label>
+              <select id="enable-auto-refresh">
+                <option value="true">启用</option>
+                <option value="false">禁用</option>
+              </select>
+              <div class="help-text">是否自动刷新推荐内容</div>
+            </div>
+          </div>
+          <button id="btn-save-recommendation">保存推荐设置</button>
+          <div id="recommendation-saved" class="status success" style="display: none;">推荐设置已保存</div>
+        </div>
+        </div>
+
+        <!-- 数据标签页 -->
+        <div class="tab-content" id="data">
+        <!-- 数据管理 -->
+        <div class="section">
+          <h2>💾 数据管理</h2>
+          <div class="warning">
+            ⚠️ <strong>注意：</strong>数据导出和清空操作会立即生效，请谨慎操作。
+          </div>
+          
+          <div class="form-group">
+            <label>📤 导出数据</label>
+            <div class="button-group">
+              <button id="btn-export" class="success">📥 导出全部数据</button>
+              <button id="btn-export-reading" class="success">📖 导出阅读数据</button>
+              <button id="btn-export-fetch" class="success">📥 导出抓取数据</button>
+            </div>
+            <div class="help-text">
+              <strong>导出全部数据：</strong>导出所有数据（阅读记录+帖子数据）<br>
+              <strong>导出阅读数据：</strong>仅导出阅读记录、会话和不感兴趣标记<br>
+              <strong>导出抓取数据：</strong>仅导出帖子数据
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label>📥 导入数据</label>
+            <div class="button-group">
+              <button id="btn-import">📤 导入全部数据</button>
+              <button id="btn-import-reading">📖 导入阅读数据</button>
+              <button id="btn-import-fetch">📥 导入抓取数据</button>
+            </div>
+            <input type="file" id="file-import" accept=".json" style="display: none;" />
+            <div class="help-text">
+              <strong>导入全部数据：</strong>导入所有数据（阅读记录+帖子数据）<br>
+              <strong>导入阅读数据：</strong>仅导入阅读记录、会话和不感兴趣标记<br>
+              <strong>导入抓取数据：</strong>仅导入帖子数据
+            </div>
+            <div id="import-progress" class="status info" style="display: none;"></div>
+            <div id="import-result" class="status" style="display: none;"></div>
+          </div>
+          
+          <div class="form-group">
+            <label>🗑️ 清空数据</label>
+            <div class="button-group">
+              <button id="btn-clear-reading" class="danger">📖 清空阅读数据</button>
+              <button id="btn-clear-fetch" class="danger">📥 清空抓取数据</button>
+              <button id="btn-clear" class="danger">🗑️ 清空所有数据</button>
+            </div>
+            <div class="help-text">
+              <strong>清空阅读数据：</strong>删除所有阅读记录、会话和不感兴趣标记，保留帖子数据<br>
+              <strong>清空抓取数据：</strong>删除所有帖子数据，保留阅读记录<br>
+              <strong>清空所有数据：</strong>删除所有数据，此操作不可撤销
+            </div>
+          </div>
+          
+          <div id="clear-status" class="status" style="display: none;"></div>
+          
+          <div class="form-group">
+            <label>🔍 推荐系统调试</label>
+            <div class="button-group">
+              <button id="btn-debug-recommendations" class="secondary">🔍 诊断推荐问题</button>
+              <button id="btn-test-tag-filtering" class="secondary">🏷️ 测试标签过滤</button>
+            </div>
+            <div class="help-text">
+              <strong>诊断推荐问题：</strong>分析推荐系统状态和潜在问题<br>
+              <strong>测试标签过滤：</strong>测试标签屏蔽功能是否正常工作
+            </div>
+            <div id="debug-status" class="status-message"></div>
+            <div id="debug-output" style="display: none; margin-top: 10px; padding: 10px; background: var(--bg-secondary); border-radius: 6px; font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto;"></div>
+          </div>
+          
+          <div class="form-group">
+            <label>🗑️ 清除推荐数据</label>
+            <div class="button-group">
+              <button id="btn-clear-recommendations" class="warning">🗑️ 清除推荐缓存</button>
+            </div>
+            <div class="help-text">
+              <strong>清除推荐缓存：</strong>清除所有推荐相关缓存和设置，重新分析用户偏好<br>
+              <span style="color: #dc3545; font-weight: 500;">⚠️ 注意：此操作将清除所有推荐缓存，需要重新学习您的阅读偏好</span>
+            </div>
+            <div id="clear-recommendations-status" class="status-message"></div>
+          </div>
+        </div>
+
+        <!-- 内容抓取 -->
+        <div class="section">
+          <h2>🔄 内容抓取</h2>
+          <div class="form-group">
+            <label>手动抓取</label>
+            <button id="btn-fetch">🚀 立即抓取新内容</button>
+            <div class="help-text">手动触发一次新帖子抓取，通常每30分钟自动执行</div>
+          </div>
+          <div id="fetch-status" class="status" style="display: none;"></div>
+        </div>
+        </div>
+
+        <!-- 关于标签页 -->
+        <div class="tab-content" id="about">
+        <!-- 关于信息 -->
+        <div class="section">
+          <h2>ℹ️ 关于</h2>
+          <div class="about-content">
+            <p><strong>版本：</strong> 0.2.6 <span class="version-badge">最新</span></p>
+            <p><strong>功能特性：</strong></p>
+            <ul>
+              <li>🎯 自动记录在 Linux.do 和 NodeSeek 的阅读行为</li>
+              <li>🔄 增量抓取新帖子内容，每30分钟自动更新</li>
+              <li>🧠 基于阅读历史的智能推荐算法</li>
+              <li>🔒 本地数据存储，完全保护隐私</li>
+              <li>⚙️ 可自定义阅读阈值设置</li>
+              <li>📊 详细的阅读统计和分析</li>
+            </ul>
+            <p><strong>🔒 隐私保护：</strong> 所有数据存储在浏览器本地，不会上传到任何服务器，完全保护您的隐私。</p>
+            <p><strong>🛠️ 技术支持：</strong> 如遇问题，请检查浏览器控制台日志或联系开发者。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <script src="options.js"></script>
+  </body>
+</html>
