@@ -483,7 +483,7 @@ async function generateRecommendations(limit = 10, forum = 'all', forceRefresh =
     
     // 获取已读帖子、不感兴趣帖子和已点击帖子的ID集合
     const readThreadIds = new Set(readEvents.map(event => event.threadId));
-    const dislikedThreadIds = new Set(dislikedThreads.map(thread => thread.threadId));
+    const dislikedThreadIds = new Set(dislikedThreads.map(thread => thread.threadId).filter(Boolean));
     const clickedThreadIds = await getClickedRecommendations();
     
     console.log('[recommender] Debug info:', {
@@ -511,6 +511,7 @@ async function generateRecommendations(limit = 10, forum = 'all', forceRefresh =
     const startTime = performance.now();
     
     // 一次性处理所有帖子，确保结果一致性
+    let filteredByDislike = 0;
     const scoredThreads = threadsToProcess
       .filter(thread => {
         const isRead = readThreadIds.has(thread.threadId);
@@ -520,7 +521,10 @@ async function generateRecommendations(limit = 10, forum = 'all', forceRefresh =
         // 主要过滤已读帖子，其他条件更宽松
         if (isRead) return false;
         // 不感兴趣的内容永远不推荐，即使强制刷新也不推荐
-        if (isDisliked) return false;
+        if (isDisliked) {
+          filteredByDislike++;
+          return false;
+        }
         if (isClicked && !forceRefresh) return false;
         
         // 改进的标签过滤：精确匹配和模糊匹配结合
@@ -540,7 +544,10 @@ async function generateRecommendations(limit = 10, forum = 'all', forceRefresh =
               return false;
             });
           });
-          if (hasDislikedTag) return false;
+          if (hasDislikedTag) {
+            filteredByDislike++;
+            return false;
+          }
         }
         
         return true;
@@ -619,17 +626,17 @@ async function generateRecommendations(limit = 10, forum = 'all', forceRefresh =
     const endTime = performance.now();
     console.log(`[recommender] Scoring completed in ${(endTime - startTime).toFixed(2)}ms`);
     
-    // 按分数排序并去重
-    let sortedThreads = scoredThreads
-      .filter(thread => thread.recommendationScore > 0.01) // 降低分数阈值
-      .sort((a, b) => b.recommendationScore - a.recommendationScore);
+    const sortByScoreDesc = (a, b) => b.recommendationScore - a.recommendationScore;
+    const filterByScore = (minScore) => scoredThreads
+      .filter(thread => thread.recommendationScore > minScore)
+      .filter(thread => !dislikedThreadIds.has(thread.threadId))
+      .sort(sortByScoreDesc);
     
-    // 如果过滤后帖子太少，进一步降低阈值
+    let sortedThreads = filterByScore(0.01);
+    
     if (sortedThreads.length < 5) {
       console.log('[recommender] Too few high-score threads, lowering threshold');
-      sortedThreads = scoredThreads
-        .filter(thread => thread.recommendationScore > 0) // 只过滤负分帖子
-        .sort((a, b) => b.recommendationScore - a.recommendationScore);
+      sortedThreads = filterByScore(0);
     }
     
     // 如果强制刷新，添加一些随机性来展示不同的内容
@@ -662,6 +669,7 @@ async function generateRecommendations(limit = 10, forum = 'all', forceRefresh =
       totalThreads: allThreads.length,
       preFiltered: preFilteredThreads.length,
       dislikedFiltered: dislikedThreads.length,
+      dislikedFilteredCount: filteredByDislike,
       readFiltered: readEvents.length,
       finalRecommendations: sortedThreads.length
     };
@@ -671,16 +679,36 @@ async function generateRecommendations(limit = 10, forum = 'all', forceRefresh =
     // 如果推荐内容太少，添加一些新帖子作为备选
     if (sortedThreads.length < 3) {
       console.log('[recommender] Too few recommendations, adding new threads as fallback');
-      const newThreads = recentThreads
+      const fallbackCandidates = recentThreads
         .filter(thread => !readThreadIds.has(thread.threadId))
+        .filter(thread => !dislikedThreadIds.has(thread.threadId))
+        .filter(thread => forceRefresh || !clickedThreadIds.has(thread.threadId))
+        .filter(thread => {
+          if (!dislikedTags.length || !thread.tags || thread.tags.length === 0) {
+            return true;
+          }
+          return !thread.tags.some(tag => {
+            return dislikedTags.some(dislikedTag => {
+              const tagLower = tag.toLowerCase().trim();
+              const dislikedTagLower = dislikedTag.toLowerCase().trim();
+              
+              if (!tagLower || !dislikedTagLower) return false;
+              if (tagLower === dislikedTagLower) return true;
+              if (tagLower.includes(dislikedTagLower) && dislikedTagLower.length >= 3) return true;
+              if (dislikedTagLower.includes(tagLower) && tagLower.length >= 3) return true;
+              
+              return false;
+            });
+          });
+        })
         .sort((a, b) => new Date(b.publishedAt || b.createdAt) - new Date(a.publishedAt || a.createdAt))
         .slice(0, 5);
       
       // 合并推荐和新帖子，去重
-      const allRecs = [...sortedThreads, ...newThreads];
-      const uniqueRecs = allRecs.filter((thread, index, self) => 
-        index === self.findIndex(t => t.threadId === thread.threadId)
-      );
+      const allRecs = [...sortedThreads, ...fallbackCandidates];
+      const uniqueRecs = allRecs
+        .filter((thread, index, self) => index === self.findIndex(t => t.threadId === thread.threadId))
+        .filter(thread => !dislikedThreadIds.has(thread.threadId));
       
       console.log(`[recommender] Added ${uniqueRecs.length - sortedThreads.length} fallback recommendations`);
       return uniqueRecs.slice(0, limit);
@@ -844,10 +872,13 @@ async function getMixedRecommendations(limit = 10, forum = 'all', forceRefresh =
       await clearClickedRecommendations();
     }
     
-    const [contentRecs, tagRecs] = await Promise.all([
+    const [contentRecs, tagRecs, dislikedThreads] = await Promise.all([
       generateRecommendations(Math.ceil(limit * 0.7), forum, forceRefresh),
-      getTagBasedRecommendations(Math.ceil(limit * 0.3), forum, forceRefresh)
+      getTagBasedRecommendations(Math.ceil(limit * 0.3), forum, forceRefresh),
+      storage.getAllDislikedThreads()
     ]);
+    
+    const dislikedThreadIds = new Set(dislikedThreads.map(thread => thread.threadId).filter(Boolean));
     
     // 合并推荐，去重
     const allRecs = [...contentRecs, ...tagRecs];
@@ -855,8 +886,12 @@ async function getMixedRecommendations(limit = 10, forum = 'all', forceRefresh =
       index === self.findIndex(t => t.threadId === thread.threadId)
     );
     
-    console.log(`[recommender] Mixed recommendations for ${forum}: ${uniqueRecs.length} unique threads (forceRefresh: ${forceRefresh})`);
-    return uniqueRecs.slice(0, limit);
+    const filteredRecs = dislikedThreadIds.size > 0
+      ? uniqueRecs.filter(thread => !dislikedThreadIds.has(thread.threadId))
+      : uniqueRecs;
+    
+    console.log(`[recommender] Mixed recommendations for ${forum}: ${filteredRecs.length} unique threads (forceRefresh: ${forceRefresh})`);
+    return filteredRecs.slice(0, limit);
     
   } catch (error) {
     console.error('[recommender] Failed to get mixed recommendations:', error);
